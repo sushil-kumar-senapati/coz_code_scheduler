@@ -87,30 +87,60 @@ def seed_all():
     # ── Data Sources (Khordha district) ──────────────────────────────────
     sources = [
         # Census village data
-        ("census_village", "Khordha", {"population": 218000, "sc_st_pct": 22.5, "literacy_rate": 78.3, "female_literacy_rate": 68.1, "households": 48500, "gender_ratio": 946}, "2011"),
+        ("census_village", "Khordha", "Odisha", {"population": 218000, "sc_st_pct": 22.5, "literacy_rate": 78.3, "female_literacy_rate": 68.1, "households": 48500, "gender_ratio": 946}, "2011"),
         # SECC data
-        ("secc_village", "Khordha", {"bpl_pct": 28.4, "landless_pct": 42.1, "deprivation_score": 0.38}, "2011"),
+        ("secc_village", "Khordha", "Odisha", {"bpl_pct": 28.4, "landless_pct": 42.1, "deprivation_score": 0.38}, "2011"),
         # UDISE+ schools
-        ("udise_school", "Khordha", {"total_schools": 87, "enrollment": 32400, "teachers": 1420, "student_teacher_ratio": 22.8, "schools_with_toilet": 71, "schools_without_toilet": 16, "toilet_coverage_pct": 81.6, "schools_with_electricity": 68, "schools_with_library": 42, "school_distance_km": 2.3}, "2023-24"),
+        ("udise_school", "Khordha", "Odisha", {"total_schools": 87, "enrollment": 32400, "teachers": 1420, "student_teacher_ratio": 22.8, "schools_with_toilet": 71, "schools_without_toilet": 16, "toilet_coverage_pct": 81.6, "schools_with_electricity": 68, "schools_with_library": 42, "school_distance_km": 2.3}, "2023-24"),
         # Health facilities
-        ("health_facility", "Khordha", {"phc_count": 12, "chc_count": 3, "district_hospital": 1, "total_doctors": 89, "total_beds": 420, "population_per_phc": 18167, "doctor_per_1000": 0.41, "distance_to_phc_km": 4.8}, "2024"),
+        ("health_facility", "Khordha", "Odisha", {"phc_count": 12, "chc_count": 3, "district_hospital": 1, "total_doctors": 89, "total_beds": 420, "population_per_phc": 18167, "doctor_per_1000": 0.41, "distance_to_phc_km": 4.8}, "2024"),
         # JJM water
-        ("jjm_water", "Khordha", {"total_hh": 48500, "hh_with_tap": 28900, "tap_water_coverage_pct": 59.6, "functional_tap_pct": 92.3, "water_quality_tested": True}, "2024-25"),
+        ("jjm_water", "Khordha", "Odisha", {"total_hh": 48500, "hh_with_tap": 28900, "tap_water_coverage_pct": 59.6, "functional_tap_pct": 92.3, "water_quality_tested": True}, "2024-25"),
         # PMGSY roads
-        ("pmgsy_road", "Khordha", {"total_habitations": 142, "connected_habitations": 118, "unconnected_habitations": 24, "habitation_connectivity_pct": 83.1, "total_road_length_km": 312.5, "road_condition_good_pct": 67.0}, "2024"),
+        ("pmgsy_road", "Khordha", "Odisha", {"total_habitations": 142, "connected_habitations": 118, "unconnected_habitations": 24, "habitation_connectivity_pct": 83.1, "total_road_length_km": 312.5, "road_condition_good_pct": 67.0}, "2024"),
         # Saubhagya electricity
-        ("saubhagya_electric", "Khordha", {"total_hh": 48500, "hh_electrified": 45200, "electrification_pct": 93.2, "street_light_coverage_pct": 62.0}, "2024"),
+        ("saubhagya_electric", "Khordha", "Odisha", {"total_hh": 48500, "hh_electrified": 45200, "electrification_pct": 93.2, "street_light_coverage_pct": 62.0}, "2024"),
         # SBM sanitation
-        ("sbm_sanitation", "Khordha", {"total_hh": 48500, "hh_with_toilet": 41300, "toilet_coverage_pct": 85.2, "odf_status": "ODF", "drainage_coverage_pct": 48.0}, "2024"),
+        ("sbm_sanitation", "Khordha", "Odisha", {"total_hh": 48500, "hh_with_toilet": 41300, "toilet_coverage_pct": 85.2, "odf_status": "ODF", "drainage_coverage_pct": 48.0}, "2024"),
+
+        # ── Jagatsinghpur district ───────────────────────────────────────
+        ("census_village", "Jagatsinghpur", "Odisha", {"population": 1136971, "sc_st_pct": 21.8, "literacy_rate": 86.6, "female_literacy_rate": 79.4, "households": 275842, "gender_ratio": 977}, "2011"),
+        ("secc_village", "Jagatsinghpur", "Odisha", {"bpl_pct": 32.1, "landless_pct": 45.3, "deprivation_score": 0.41}, "2011"),
+        ("udise_school", "Jagatsinghpur", "Odisha", {"total_schools": 1245, "enrollment": 98400, "teachers": 4520, "student_teacher_ratio": 21.8, "schools_with_toilet": 1024, "schools_without_toilet": 221, "toilet_coverage_pct": 82.2, "schools_with_electricity": 892, "schools_with_library": 456, "school_distance_km": 1.8}, "2023-24"),
+        ("health_facility", "Jagatsinghpur", "Odisha", {"phc_count": 38, "chc_count": 7, "district_hospital": 1, "total_doctors": 142, "total_beds": 680, "population_per_phc": 29920, "doctor_per_1000": 0.12, "distance_to_phc_km": 6.2}, "2024"),
+        ("jjm_water", "Jagatsinghpur", "Odisha", {"total_hh": 275842, "hh_with_tap": 151713, "tap_water_coverage_pct": 55.0, "functional_tap_pct": 88.5, "water_quality_tested": True}, "2024-25"),
+        ("pmgsy_road", "Jagatsinghpur", "Odisha", {"total_habitations": 1726, "connected_habitations": 1348, "unconnected_habitations": 378, "habitation_connectivity_pct": 78.1, "total_road_length_km": 845.3, "road_condition_good_pct": 58.0}, "2024"),
+        ("saubhagya_electric", "Jagatsinghpur", "Odisha", {"total_hh": 275842, "hh_electrified": 251517, "electrification_pct": 91.2, "street_light_coverage_pct": 42.0}, "2024"),
+        ("sbm_sanitation", "Jagatsinghpur", "Odisha", {"total_hh": 275842, "hh_with_toilet": 221226, "toilet_coverage_pct": 80.2, "odf_status": "ODF", "drainage_coverage_pct": 35.0}, "2024"),
+
+        # ── Puri district (partially under Jagatsinghpur constituency) ───
+        ("census_village", "Puri", "Odisha", {"population": 1698730, "sc_st_pct": 19.3, "literacy_rate": 85.4, "female_literacy_rate": 77.8, "households": 412340, "gender_ratio": 972}, "2011"),
+        ("secc_village", "Puri", "Odisha", {"bpl_pct": 35.2, "landless_pct": 48.6, "deprivation_score": 0.44}, "2011"),
+        ("udise_school", "Puri", "Odisha", {"total_schools": 1680, "enrollment": 142000, "teachers": 6200, "student_teacher_ratio": 22.9, "schools_with_toilet": 1310, "schools_without_toilet": 370, "toilet_coverage_pct": 78.0, "schools_with_electricity": 1180, "school_distance_km": 2.1}, "2023-24"),
+        ("health_facility", "Puri", "Odisha", {"phc_count": 42, "chc_count": 8, "district_hospital": 1, "total_doctors": 168, "total_beds": 820, "population_per_phc": 40446, "doctor_per_1000": 0.10, "distance_to_phc_km": 7.5}, "2024"),
+        ("jjm_water", "Puri", "Odisha", {"total_hh": 412340, "hh_with_tap": 206170, "tap_water_coverage_pct": 50.0, "functional_tap_pct": 85.0}, "2024-25"),
+        ("pmgsy_road", "Puri", "Odisha", {"total_habitations": 2450, "connected_habitations": 1838, "unconnected_habitations": 612, "habitation_connectivity_pct": 75.0, "total_road_length_km": 1120.5, "road_condition_good_pct": 55.0}, "2024"),
+        ("saubhagya_electric", "Puri", "Odisha", {"total_hh": 412340, "hh_electrified": 370106, "electrification_pct": 89.8, "street_light_coverage_pct": 38.0}, "2024"),
+        ("sbm_sanitation", "Puri", "Odisha", {"total_hh": 412340, "hh_with_toilet": 318551, "toilet_coverage_pct": 77.3, "odf_status": "ODF", "drainage_coverage_pct": 32.0}, "2024"),
+
+        # ── Cuttack district ─────────────────────────────────────────────
+        ("census_village", "Cuttack", "Odisha", {"population": 2624470, "sc_st_pct": 18.5, "literacy_rate": 84.2, "female_literacy_rate": 76.9, "households": 605200, "gender_ratio": 958}, "2011"),
+        ("secc_village", "Cuttack", "Odisha", {"bpl_pct": 26.8, "landless_pct": 39.4, "deprivation_score": 0.34}, "2011"),
+        ("udise_school", "Cuttack", "Odisha", {"total_schools": 2450, "enrollment": 218000, "teachers": 9800, "student_teacher_ratio": 22.2, "toilet_coverage_pct": 84.5, "school_distance_km": 1.6}, "2023-24"),
+        ("health_facility", "Cuttack", "Odisha", {"phc_count": 62, "chc_count": 14, "district_hospital": 2, "total_doctors": 340, "total_beds": 1800, "population_per_phc": 42330, "doctor_per_1000": 0.13, "distance_to_phc_km": 5.2}, "2024"),
+        ("jjm_water", "Cuttack", "Odisha", {"total_hh": 605200, "hh_with_tap": 357068, "tap_water_coverage_pct": 59.0}, "2024-25"),
+        ("pmgsy_road", "Cuttack", "Odisha", {"total_habitations": 3200, "connected_habitations": 2688, "unconnected_habitations": 512, "habitation_connectivity_pct": 84.0}, "2024"),
+        ("saubhagya_electric", "Cuttack", "Odisha", {"total_hh": 605200, "hh_electrified": 563836, "electrification_pct": 93.2}, "2024"),
+        ("sbm_sanitation", "Cuttack", "Odisha", {"total_hh": 605200, "hh_with_toilet": 496264, "toilet_coverage_pct": 82.0, "odf_status": "ODF"}, "2024"),
     ]
-    for src_type, district, data, year in sources:
+    for src_type, district, state, data, year in sources:
         existing = fetch_one(conn, "SELECT id FROM data_sources WHERE source_type = %s AND district = %s", (src_type, district))
         if not existing:
             execute_returning_uuid(conn, """
                 INSERT INTO data_sources (id, source_type, state, district, data_json, data_year)
-                VALUES (%s, %s, 'Odisha', %s, %s, %s)
-            """, (src_type, district, json.dumps(data), year))
-    print(f"  Data sources: {len(sources)} seeded for Khordha")
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (src_type, state, district, json.dumps(data), year))
+    print(f"  Data sources: {len(sources)} seeded for Khordha + Jagatsinghpur + Puri + Cuttack")
 
     # ── MPLADS Fund History ──────────────────────────────────────────────
     history = [
@@ -129,6 +159,31 @@ def seed_all():
         ("Bhubaneswar", "2024-25", "SANITATION", 4500000, 4000000, 3, 2, 0, 1),
         ("Bhubaneswar", "2024-25", "ELECTRICITY", 4000000, 3700000, 3, 3, 0, 0),
         ("Bhubaneswar", "2024-25", "COMMUNITY_INFRASTRUCTURE", 2500000, 2200000, 2, 2, 0, 0),
+        # Jagatsinghpur MPLADS Fund History (from eSAKSHI data)
+        ("Jagatsinghpur", "2022-23", "ROADS_PATHWAYS_BRIDGES", 18500000, 16200000, 12, 10, 1, 1),
+        ("Jagatsinghpur", "2022-23", "EDUCATION", 3500000, 3100000, 4, 3, 0, 1),
+        ("Jagatsinghpur", "2022-23", "HEALTH", 5200000, 4600000, 3, 2, 0, 1),
+        ("Jagatsinghpur", "2022-23", "DRINKING_WATER", 8000000, 7200000, 6, 5, 0, 1),
+        ("Jagatsinghpur", "2022-23", "SANITATION", 4500000, 4000000, 3, 3, 0, 0),
+        ("Jagatsinghpur", "2022-23", "ELECTRICITY", 3200000, 2800000, 4, 3, 0, 1),
+        ("Jagatsinghpur", "2022-23", "IRRIGATION", 2800000, 2400000, 2, 2, 0, 0),
+        ("Jagatsinghpur", "2022-23", "COMMUNITY_INFRASTRUCTURE", 2300000, 2000000, 3, 2, 0, 1),
+        ("Jagatsinghpur", "2023-24", "ROADS_PATHWAYS_BRIDGES", 20000000, 18500000, 10, 8, 1, 1),
+        ("Jagatsinghpur", "2023-24", "EDUCATION", 4200000, 3800000, 5, 4, 0, 1),
+        ("Jagatsinghpur", "2023-24", "HEALTH", 6500000, 5800000, 4, 3, 0, 1),
+        ("Jagatsinghpur", "2023-24", "DRINKING_WATER", 7500000, 6900000, 5, 4, 0, 1),
+        ("Jagatsinghpur", "2023-24", "SANITATION", 3800000, 3400000, 3, 2, 0, 1),
+        ("Jagatsinghpur", "2023-24", "ELECTRICITY", 3500000, 3100000, 3, 3, 0, 0),
+        ("Jagatsinghpur", "2023-24", "SPORTS", 1500000, 1200000, 2, 1, 0, 1),
+        ("Jagatsinghpur", "2023-24", "COMMUNITY_INFRASTRUCTURE", 2000000, 1800000, 2, 2, 0, 0),
+        ("Jagatsinghpur", "2024-25", "ROADS_PATHWAYS_BRIDGES", 17500000, 15000000, 8, 6, 1, 1),
+        ("Jagatsinghpur", "2024-25", "EDUCATION", 6000000, 5200000, 6, 4, 1, 1),
+        ("Jagatsinghpur", "2024-25", "HEALTH", 7200000, 6400000, 4, 3, 0, 1),
+        ("Jagatsinghpur", "2024-25", "DRINKING_WATER", 8500000, 7600000, 6, 5, 0, 1),
+        ("Jagatsinghpur", "2024-25", "SANITATION", 4000000, 3500000, 3, 2, 0, 1),
+        ("Jagatsinghpur", "2024-25", "ELECTRICITY", 3800000, 3400000, 4, 3, 0, 1),
+        ("Jagatsinghpur", "2024-25", "IRRIGATION", 1500000, 1200000, 2, 1, 0, 1),
+        ("Jagatsinghpur", "2024-25", "DISASTER_RELIEF", 1500000, 1300000, 2, 2, 0, 0),
     ]
     for const, fy, cat, sanc, spent, works, comp, pend, prog in history:
         existing = fetch_one(conn, """
@@ -143,13 +198,26 @@ def seed_all():
             """, (const, fy, cat, sanc, spent, works, comp, pend, prog))
     print(f"  Fund history: {len(history)} rows seeded")
 
-    # ── Scoring Weights (default) ────────────────────────────────────────
-    existing = fetch_one(conn, "SELECT id FROM scoring_weights WHERE constituency = 'Bhubaneswar' AND is_active = TRUE")
-    if not existing:
-        execute_returning_uuid(conn, """
-            INSERT INTO scoring_weights (id, constituency, is_active) VALUES (%s, 'Bhubaneswar', TRUE)
-        """, ())
-    print("  Scoring weights: defaults seeded")
+    # ── Scoring Weights + Budget Tracker for ALL Odisha constituencies ───
+    ALL_CONSTITUENCIES = [
+        "Bargarh", "Sundargarh", "Sambalpur", "Keonjhar", "Mayurbhanj",
+        "Balasore", "Bhadrak", "Jajpur", "Dhenkanal", "Bolangir",
+        "Kalahandi", "Nabarangpur", "Kandhamal", "Cuttack", "Kendrapara",
+        "Jagatsinghpur", "Puri", "Bhubaneswar", "Aska", "Berhampur", "Koraput",
+    ]
+    for const in ALL_CONSTITUENCIES:
+        existing = fetch_one(conn, "SELECT id FROM scoring_weights WHERE constituency = %s AND is_active = TRUE", (const,))
+        if not existing:
+            execute_returning_uuid(conn, """
+                INSERT INTO scoring_weights (id, constituency, is_active) VALUES (%s, %s, TRUE)
+            """, (const,))
+        existing_bt = fetch_one(conn, "SELECT id FROM budget_tracker WHERE constituency = %s AND financial_year = '2026-27'", (const,))
+        if not existing_bt:
+            execute_returning_uuid(conn, """
+                INSERT INTO budget_tracker (id, constituency, financial_year, total_budget, remaining)
+                VALUES (%s, %s, '2026-27', 50000000, 50000000)
+            """, (const,))
+    print(f"  Scoring weights + budget trackers: {len(ALL_CONSTITUENCIES)} constituencies seeded")
 
     conn.close()
     print("\nAll seed data loaded successfully!")
