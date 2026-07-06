@@ -17,164 +17,39 @@ AI Services Used (all free, no API key needed):
   - pydub + ffmpeg: Audio format conversion
 """
 
-import re
-import os
 import logging
-import tempfile
 from pipeline.db import (
     get_connection, fetch_all, fetch_one, execute, execute_returning_uuid,
     insert_status_log,
 )
+# All Google/GCP calls go through the unified services layer (dev/cloud toggle).
+from pipeline.google_services import (
+    transcribe_audio, translate_to_english, ocr_image,
+)
 
 log = logging.getLogger("pipeline.layer2")
 
-# Upload directory (same as backend-api)
-UPLOAD_BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "backend-api", "uploads"))
 
-
-# ── Real AI Functions ────────────────────────────────────────────────────────
+# ── Thin delegators (kept for backwards-compatible imports) ──────────────────
 
 def real_asr(file_url: str, language: str) -> str:
-    """
-    Speech-to-Text using Google Speech Recognition (free).
-    Converts audio to WAV via ffmpeg, then sends to Google API.
-    """
-    # Resolve file path from URL
-    file_path = os.path.join(UPLOAD_BASE, *file_url.strip("/").replace("uploads/", "").split("/"))
-    if not os.path.exists(file_path):
-        log.warning(f"  [ASR] Audio file not found: {file_path}")
-        return ""
-
-    log.info(f"  [ASR] Processing audio: {file_path}")
-
-    try:
-        import speech_recognition as sr
-        from pydub import AudioSegment
-
-        # Convert to WAV (Google API needs WAV)
-        audio = AudioSegment.from_file(file_path)
-        wav_path = tempfile.mktemp(suffix=".wav")
-        audio.export(wav_path, format="wav")
-
-        # Recognize speech
-        recognizer = sr.Recognizer()
-        with sr.AudioFile(wav_path) as source:
-            audio_data = recognizer.record(source)
-
-        # Map language codes for Google API
-        lang_map = {
-            "en": "en-IN", "english": "en-IN",
-            "hi": "hi-IN", "hindi": "hi-IN",
-            "or": "or-IN", "odia": "or-IN",
-            "bn": "bn-IN", "bengali": "bn-IN",
-            "ta": "ta-IN", "tamil": "ta-IN",
-            "te": "te-IN", "telugu": "te-IN",
-            "mr": "mr-IN", "marathi": "mr-IN",
-            "gu": "gu-IN", "gujarati": "gu-IN",
-            "kn": "kn-IN", "kannada": "kn-IN",
-            "ml": "ml-IN", "malayalam": "ml-IN",
-            "pa": "pa-IN", "punjabi": "pa-IN",
-        }
-        google_lang = lang_map.get(language, "en-IN")
-
-        text = recognizer.recognize_google(audio_data, language=google_lang)
-        log.info(f"  [ASR] Transcribed: '{text[:80]}...'")
-
-        # Cleanup temp file
-        os.unlink(wav_path)
-        return text
-
-    except Exception as e:
-        log.error(f"  [ASR] Failed: {e}")
-        return f"[Audio could not be transcribed: {str(e)[:100]}]"
+    return transcribe_audio(file_url, language)
 
 
 def real_ocr(file_url: str) -> str:
-    """
-    Image-to-Text using Pillow for image loading.
-    Tries pytesseract first, falls back to basic extraction.
-    """
-    file_path = os.path.join(UPLOAD_BASE, *file_url.strip("/").replace("uploads/", "").split("/"))
-    if not os.path.exists(file_path):
-        log.warning(f"  [OCR] Image file not found: {file_path}")
-        return ""
-
-    log.info(f"  [OCR] Processing image: {file_path}")
-
-    try:
-        from PIL import Image
-        img = Image.open(file_path)
-
-        # Try pytesseract
-        try:
-            import pytesseract
-            pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-            text = pytesseract.image_to_string(img, lang="eng+hin+ori")
-            if text.strip():
-                log.info(f"  [OCR] Extracted: '{text.strip()[:80]}...'")
-                return text.strip()
-        except Exception as e:
-            log.warning(f"  [OCR] Tesseract failed ({e}), using image metadata")
-
-        # Fallback: return image description
-        w, h = img.size
-        return f"[Image uploaded: {w}x{h} pixels, format={img.format}. Content needs manual review or Tesseract installation.]"
-
-    except Exception as e:
-        log.error(f"  [OCR] Failed: {e}")
-        return f"[Image could not be processed: {str(e)[:100]}]"
+    return ocr_image(file_url)
 
 
 def real_translate(text: str, source_lang: str) -> str:
-    """
-    Translate to English using Google Translate (free via deep-translator).
-    """
-    if not text or not text.strip():
-        return ""
-
-    # Already English
-    if source_lang in ("en", "english"):
-        return text
-
-    # Check if text is ASCII (likely already English)
-    if all(ord(c) < 128 for c in text.replace("[", "").replace("]", "")):
-        return text
-
-    log.info(f"  [TRANSLATE] Translating from {source_lang} → English")
-
-    try:
-        from deep_translator import GoogleTranslator
-        # Map our language codes to Google's
-        lang_map = {
-            "hi": "hi", "hindi": "hi",
-            "or": "or", "odia": "or",
-            "bn": "bn", "bengali": "bn",
-            "ta": "ta", "tamil": "ta",
-            "te": "te", "telugu": "te",
-            "mr": "mr", "marathi": "mr",
-            "gu": "gu", "gujarati": "gu",
-            "kn": "kn", "kannada": "kn",
-            "ml": "ml", "malayalam": "ml",
-            "pa": "pa", "punjabi": "pa",
-            "ur": "ur", "urdu": "ur",
-            "as": "as", "assamese": "as",
-        }
-        src = lang_map.get(source_lang, "auto")
-        translated = GoogleTranslator(source=src, target="en").translate(text[:5000])
-        log.info(f"  [TRANSLATE] Result: '{translated[:80]}...'")
-        return translated
-
-    except Exception as e:
-        log.warning(f"  [TRANSLATE] Failed ({e}), returning original")
-        return text
+    return translate_to_english(text, source_lang)
 
 
 def simulate_ocr(file_url: str) -> str:
-    return real_ocr(file_url)
+    return ocr_image(file_url)
 
 
 def simulate_translate(text: str, source_lang: str) -> str:
-    return real_translate(text, source_lang)
+    return translate_to_english(text, source_lang)
 
 
 def check_spam(text: str, user_id: str, conn) -> tuple[bool, str]:

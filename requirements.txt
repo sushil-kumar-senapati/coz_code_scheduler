@@ -3,3 +3,17 @@ mysql-connector-python==9.*
 python-dotenv==1.1.*
 scikit-learn==1.6.*
 numpy==2.*
+
+# Layer 2 — multi-modal intake (audio / image / translation)
+SpeechRecognition==3.*        # Google free Speech-to-Text (ASR)  [GOOGLE_MODE=dev]
+pydub==0.25.*                 # audio format conversion (needs ffmpeg on PATH or FFMPEG_PATH)
+deep-translator==1.*          # Google Translate (native language -> English)  [GOOGLE_MODE=dev]
+requests==2.*                 # Google Cloud Vision REST (OCR) — both modes
+
+# Layer 3 — semantic clustering (dev mode): local ONNX embeddings, no key/torch
+fastembed==0.*                # multilingual-e5 embeddings  [GOOGLE_MODE=dev]
+
+# GOOGLE_MODE=cloud (production on GCP) — install these when deploying:
+#   google-cloud-speech         # Cloud Speech-to-Text (ASR)
+#   google-cloud-translate      # Cloud Translation
+#   google-cloud-aiplatform     # Vertex AI text embeddings
