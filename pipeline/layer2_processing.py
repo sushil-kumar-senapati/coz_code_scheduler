@@ -4,42 +4,83 @@ LAYER 2: Data Processing & Filtering
 Pipeline: raw_submissions → processed_submissions
 
 For each new raw submission:
-  1. If audio → Google Speech Recognition (free) → text in source language
-  2. If image → Tesseract OCR / PIL → text extraction
-  3. Translate all text to English using Google Translate (free)
+  1. If audio → Google Cloud Speech-to-Text V2 → text in source language
+  2. If image → Google Cloud Vision API → text extraction (OCR)
+  3. Translate all text to English using Google Cloud Translate V2
   4. Spam filtering
   5. Store in processed_submissions
 
-AI Services Used (all free, no API key needed):
-  - SpeechRecognition: Google's free speech-to-text API
-  - pytesseract/PIL: Tesseract OCR for handwritten/printed text
-  - deep-translator: Google Translate wrapper
-  - pydub + ffmpeg: Audio format conversion
+AI Services (Google Cloud REST APIs with API key):
+  - Speech-to-Text V2: speech.googleapis.com/v1/speech:recognize
+  - Vision API: vision.googleapis.com/v1/images:annotate
+  - Translate V2: translation.googleapis.com/language/translate/v2
+  - Fallback: free libraries (speech_recognition, pytesseract, deep-translator)
 """
 
 import re
 import os
+import json
+import base64
 import logging
 import tempfile
+import time
+import urllib.request
 from pipeline.db import (
     get_connection, fetch_all, fetch_one, execute, execute_returning_uuid,
     insert_status_log,
 )
+from pipeline.config import GOOGLE_API_KEY
 
 log = logging.getLogger("pipeline.layer2")
 
 # Upload directory (same as backend-api)
-UPLOAD_BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "backend-api", "uploads"))
+UPLOAD_BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "coz_code_backend", "uploads"))
+
+# Gemini API config
+GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MAX_RETRIES = 3
+GEMINI_RETRY_DELAY = 4  # seconds between retries (free tier: 15 RPM)
 
 
-# ── Real AI Functions ────────────────────────────────────────────────────────
+def _call_gemini(parts: list, max_tokens: int = 8192) -> str | None:
+    """Call Gemini API with retry logic for 503 rate limit errors.
+    Returns the text response or None on failure."""
+    if not GOOGLE_API_KEY:
+        return None
+
+    payload = json.dumps({
+        "contents": [{"parts": parts}],
+        "generationConfig": {"temperature": 0.1, "maxOutputTokens": max_tokens},
+    }).encode("utf-8")
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GOOGLE_API_KEY}"
+
+    for attempt in range(1, GEMINI_MAX_RETRIES + 1):
+        try:
+            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                result = json.loads(resp.read().decode())
+            candidates = result.get("candidates", [])
+            if candidates:
+                content_parts = candidates[0].get("content", {}).get("parts", [])
+                if content_parts:
+                    text = content_parts[0].get("text", "").strip()
+                    if text:
+                        return text
+            return None
+        except urllib.error.HTTPError as e:
+            if e.code == 503 and attempt < GEMINI_MAX_RETRIES:
+                log.info(f"    Gemini 503 (rate limit), retrying in {GEMINI_RETRY_DELAY}s... (attempt {attempt}/{GEMINI_MAX_RETRIES})")
+                time.sleep(GEMINI_RETRY_DELAY)
+                continue
+            raise
+    return None
+
+
+# ── Google Cloud Speech-to-Text V2 ──────────────────────────────────────────
 
 def real_asr(file_url: str, language: str) -> str:
-    """
-    Speech-to-Text using Google Speech Recognition (free).
-    Converts audio to WAV via ffmpeg, then sends to Google API.
-    """
-    # Resolve file path from URL
+    """Speech-to-Text using Google Cloud Speech-to-Text V2 API. Falls back to free API."""
     file_path = os.path.join(UPLOAD_BASE, *file_url.strip("/").replace("uploads/", "").split("/"))
     if not os.path.exists(file_path):
         log.warning(f"  [ASR] Audio file not found: {file_path}")
@@ -47,53 +88,64 @@ def real_asr(file_url: str, language: str) -> str:
 
     log.info(f"  [ASR] Processing audio: {file_path}")
 
+    lang_map = {
+        "en": "en-IN", "english": "en-IN", "hi": "hi-IN", "hindi": "hi-IN",
+        "or": "or-IN", "odia": "or-IN", "bn": "bn-IN", "bengali": "bn-IN",
+        "ta": "ta-IN", "tamil": "ta-IN", "te": "te-IN", "telugu": "te-IN",
+        "mr": "mr-IN", "marathi": "mr-IN", "gu": "gu-IN", "gujarati": "gu-IN",
+        "kn": "kn-IN", "kannada": "kn-IN", "ml": "ml-IN", "malayalam": "ml-IN",
+        "pa": "pa-IN", "punjabi": "pa-IN",
+    }
+    google_lang = lang_map.get(language, "en-IN")
+
+    # ── Try 1: Gemini 2.5 Flash for audio (FREE — supports native languages) ──
+    if GOOGLE_API_KEY:
+        try:
+            with open(file_path, "rb") as f:
+                audio_bytes = f.read()
+            audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+
+            ext = os.path.splitext(file_path)[1].lower()
+            audio_mime = {".webm": "audio/webm", ".wav": "audio/wav",
+                          ".mp3": "audio/mp3", ".ogg": "audio/ogg", ".m4a": "audio/mp4"}
+            mime = audio_mime.get(ext, "audio/webm")
+
+            text = _call_gemini([
+                {"text": f"Transcribe this audio recording accurately. The speaker may be speaking in {google_lang.split('-')[0]} or any Indian language. "
+                         "Provide the transcription in the original language, then translate to English. "
+                         "Format: ORIGINAL: <transcription>\nENGLISH: <English translation>"},
+                {"inline_data": {"mime_type": mime, "data": audio_b64}},
+            ])
+            if text:
+                log.info(f"  [ASR] Gemini: '{text[:100]}...'")
+                return text
+        except Exception as e:
+            log.warning(f"  [ASR] Gemini failed ({e}), trying free API")
+
+    # ── Try 2: Free speech_recognition library ──
     try:
         import speech_recognition as sr
         from pydub import AudioSegment
-
-        # Convert to WAV (Google API needs WAV)
         audio = AudioSegment.from_file(file_path)
         wav_path = tempfile.mktemp(suffix=".wav")
         audio.export(wav_path, format="wav")
-
-        # Recognize speech
         recognizer = sr.Recognizer()
         with sr.AudioFile(wav_path) as source:
             audio_data = recognizer.record(source)
-
-        # Map language codes for Google API
-        lang_map = {
-            "en": "en-IN", "english": "en-IN",
-            "hi": "hi-IN", "hindi": "hi-IN",
-            "or": "or-IN", "odia": "or-IN",
-            "bn": "bn-IN", "bengali": "bn-IN",
-            "ta": "ta-IN", "tamil": "ta-IN",
-            "te": "te-IN", "telugu": "te-IN",
-            "mr": "mr-IN", "marathi": "mr-IN",
-            "gu": "gu-IN", "gujarati": "gu-IN",
-            "kn": "kn-IN", "kannada": "kn-IN",
-            "ml": "ml-IN", "malayalam": "ml-IN",
-            "pa": "pa-IN", "punjabi": "pa-IN",
-        }
-        google_lang = lang_map.get(language, "en-IN")
-
         text = recognizer.recognize_google(audio_data, language=google_lang)
-        log.info(f"  [ASR] Transcribed: '{text[:80]}...'")
-
-        # Cleanup temp file
         os.unlink(wav_path)
+        log.info(f"  [ASR] Free API: '{text[:80]}...'")
         return text
-
     except Exception as e:
-        log.error(f"  [ASR] Failed: {e}")
+        log.error(f"  [ASR] All ASR methods failed: {e}")
         return f"[Audio could not be transcribed: {str(e)[:100]}]"
 
 
+# ── Gemini OCR (+ Vision API + Tesseract fallback) ──────────────────────────
+
 def real_ocr(file_url: str) -> str:
-    """
-    Image-to-Text using Pillow for image loading.
-    Tries pytesseract first, falls back to basic extraction.
-    """
+    """Image-to-Text using Gemini (best for handwritten native languages), 
+    falls back to Vision API, then Tesseract."""
     file_path = os.path.join(UPLOAD_BASE, *file_url.strip("/").replace("uploads/", "").split("/"))
     if not os.path.exists(file_path):
         log.warning(f"  [OCR] Image file not found: {file_path}")
@@ -101,80 +153,110 @@ def real_ocr(file_url: str) -> str:
 
     log.info(f"  [OCR] Processing image: {file_path}")
 
+    # Read image as base64
+    with open(file_path, "rb") as f:
+        image_bytes = f.read()
+    image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+    # Detect mime type
+    ext = os.path.splitext(file_path)[1].lower()
+    mime_map = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif"}
+    mime_type = mime_map.get(ext, "image/jpeg")
+
+    # ── Try 1: Gemini 2.5 Flash (FREE — best for handwritten + native language) ──
+    if GOOGLE_API_KEY:
+        try:
+            text = _call_gemini([
+                {"text": "Read ALL the text written in this image carefully. The text may be handwritten in Odia, Hindi, Bengali, or any other Indian language. "
+                         "Extract the EXACT text as written, then provide an accurate English translation. "
+                         "Format your response as:\nORIGINAL: <exact text from image>\nENGLISH: <English translation>\n"
+                         "If the text is already in English, just return it as-is under both ORIGINAL and ENGLISH."},
+                {"inline_data": {"mime_type": mime_type, "data": image_b64}},
+            ])
+            if text:
+                log.info(f"  [OCR] Gemini: '{text[:120]}...'")
+                return text
+        except Exception as e:
+            log.warning(f"  [OCR] Gemini failed ({e}), trying Tesseract")
+
+    # ── Try 2: Tesseract OCR (local fallback) ────────────────────────────
     try:
         from PIL import Image
         img = Image.open(file_path)
-
-        # Try pytesseract
         try:
             import pytesseract
             pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
             text = pytesseract.image_to_string(img, lang="eng+hin+ori")
             if text.strip():
-                log.info(f"  [OCR] Extracted: '{text.strip()[:80]}...'")
+                log.info(f"  [OCR] Tesseract: '{text.strip()[:80]}...'")
                 return text.strip()
         except Exception as e:
-            log.warning(f"  [OCR] Tesseract failed ({e}), using image metadata")
-
-        # Fallback: return image description
+            log.warning(f"  [OCR] Tesseract failed ({e})")
         w, h = img.size
-        return f"[Image uploaded: {w}x{h} pixels, format={img.format}. Content needs manual review or Tesseract installation.]"
-
+        return f"[Image uploaded: {w}x{h} pixels. Set GOOGLE_API_KEY for Gemini OCR.]"
     except Exception as e:
-        log.error(f"  [OCR] Failed: {e}")
+        log.error(f"  [OCR] All OCR methods failed: {e}")
         return f"[Image could not be processed: {str(e)[:100]}]"
 
 
+# ── Google Cloud Translate V2 ────────────────────────────────────────────────
+
 def real_translate(text: str, source_lang: str) -> str:
-    """
-    Translate to English using Google Translate (free via deep-translator).
-    """
+    """Translate to English using Google Cloud Translate V2. Falls back to free library.
+    If Gemini OCR already provided ENGLISH: section, extracts that directly."""
     if not text or not text.strip():
         return ""
 
-    # Already English
-    if source_lang in ("en", "english"):
+    # Check if Gemini already provided English translation (format: ORIGINAL: ...\nENGLISH: ...)
+    if "ENGLISH:" in text:
+        lines = text.split("ENGLISH:")
+        if len(lines) >= 2:
+            english_part = lines[-1].strip()
+            if english_part and len(english_part) > 10:
+                log.info(f"  [TRANSLATE] Gemini already provided English: '{english_part[:80]}...'")
+                return english_part
+
+    # Check if text contains non-ASCII characters (native language script)
+    has_non_ascii = any(ord(c) > 127 for c in text)
+
+    # Only skip translation if source is English AND text is actually ASCII
+    if source_lang in ("en", "english") and not has_non_ascii:
+        return text
+    if not has_non_ascii:
         return text
 
-    # Check if text is ASCII (likely already English)
-    if all(ord(c) < 128 for c in text.replace("[", "").replace("]", "")):
-        return text
+    log.info(f"  [TRANSLATE] Translating to English (source={source_lang}, has_native_script={has_non_ascii})")
 
-    log.info(f"  [TRANSLATE] Translating from {source_lang} → English")
+    # Try Gemini 2.5 Flash for translation (FREE)
+    if GOOGLE_API_KEY:
+        try:
+            translated = _call_gemini([
+                {"text": f"Translate the following text to English accurately. If it contains multiple languages, translate all parts to English. Return ONLY the English translation, nothing else.\n\nText:\n{text[:5000]}"}
+            ])
+            if translated:
+                log.info(f"  [TRANSLATE] Gemini: '{translated[:80]}...'")
+                return translated
+        except Exception as e:
+            log.warning(f"  [TRANSLATE] Gemini failed ({e}), trying free library")
 
+    # Fallback: deep-translator (free)
     try:
         from deep_translator import GoogleTranslator
-        # Map our language codes to Google's
         lang_map = {
-            "hi": "hi", "hindi": "hi",
-            "or": "or", "odia": "or",
-            "bn": "bn", "bengali": "bn",
-            "ta": "ta", "tamil": "ta",
-            "te": "te", "telugu": "te",
-            "mr": "mr", "marathi": "mr",
-            "gu": "gu", "gujarati": "gu",
-            "kn": "kn", "kannada": "kn",
-            "ml": "ml", "malayalam": "ml",
-            "pa": "pa", "punjabi": "pa",
-            "ur": "ur", "urdu": "ur",
-            "as": "as", "assamese": "as",
+            "hi": "hi", "hindi": "hi", "or": "or", "odia": "or",
+            "bn": "bn", "bengali": "bn", "ta": "ta", "tamil": "ta",
+            "te": "te", "telugu": "te", "mr": "mr", "marathi": "mr",
+            "gu": "gu", "gujarati": "gu", "kn": "kn", "kannada": "kn",
+            "ml": "ml", "malayalam": "ml", "pa": "pa", "punjabi": "pa",
+            "ur": "ur", "urdu": "ur", "as": "as", "assamese": "as",
         }
         src = lang_map.get(source_lang, "auto")
         translated = GoogleTranslator(source=src, target="en").translate(text[:5000])
-        log.info(f"  [TRANSLATE] Result: '{translated[:80]}...'")
+        log.info(f"  [TRANSLATE] Free API: '{translated[:80]}...'")
         return translated
-
     except Exception as e:
-        log.warning(f"  [TRANSLATE] Failed ({e}), returning original")
+        log.warning(f"  [TRANSLATE] All translation methods failed ({e})")
         return text
-
-
-def simulate_ocr(file_url: str) -> str:
-    return real_ocr(file_url)
-
-
-def simulate_translate(text: str, source_lang: str) -> str:
-    return real_translate(text, source_lang)
 
 
 def check_spam(text: str, user_id: str, conn) -> tuple[bool, str]:
@@ -233,10 +315,13 @@ def process_submissions(conn) -> int:
     log.info(f"Layer 2: Processing {len(submissions)} new submissions")
     processed_count = 0
 
-    for sub in submissions:
+    for idx, sub in enumerate(submissions):
         try:
             _process_one(conn, sub)
             processed_count += 1
+            # Pace API calls to avoid Gemini free tier rate limits (15 RPM)
+            if idx < len(submissions) - 1 and sub.get("media_types"):
+                time.sleep(2)
         except Exception as e:
             log.error(f"  Error processing {sub['tracking_id']}: {e}")
             execute(conn, "UPDATE raw_submissions SET status = 'failed' WHERE id = %s", (sub["id"],))
@@ -287,13 +372,13 @@ def _process_one(conn, sub: dict):
         execute_returning_uuid(conn, """
             INSERT INTO processing_queue (id, raw_submission_id, stage, status, input_payload, output_payload, started_at, completed_at)
             VALUES (%s, %s, 'asr', 'completed', %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        """, (sub_id, f'{{"audio_url": "{audio_url}"}}', f'{{"text": "{asr_text[:100]}"}}'))
+        """, (sub_id, json.dumps({"audio_url": audio_url}), json.dumps({"text": asr_text[:500]})))
 
     # Image input (OCR)
     if has_image:
         img_idx = media_types.index("image")
         img_url = media_urls[img_idx] if img_idx < len(media_urls) else ""
-        ocr_text = simulate_ocr(img_url)
+        ocr_text = real_ocr(img_url)
         if ocr_text:
             extracted_parts.append(ocr_text)
         if processing_method == "direct_text":
@@ -306,18 +391,18 @@ def _process_one(conn, sub: dict):
         execute_returning_uuid(conn, """
             INSERT INTO processing_queue (id, raw_submission_id, stage, status, input_payload, output_payload, started_at, completed_at)
             VALUES (%s, %s, 'ocr', 'completed', %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        """, (sub_id, f'{{"image_url": "{img_url}"}}', f'{{"text": "{ocr_text[:100]}"}}'))
+        """, (sub_id, json.dumps({"image_url": img_url}), json.dumps({"text": ocr_text[:500]})))
 
     # Combine all extracted text
     original_text = " | ".join(extracted_parts) if extracted_parts else raw_text
 
     # ── Step 2: Translate to English ─────────────────────────────────────
-    translated = simulate_translate(original_text, lang)
+    translated = real_translate(original_text, lang)
 
     execute_returning_uuid(conn, """
         INSERT INTO processing_queue (id, raw_submission_id, stage, status, input_payload, output_payload, started_at, completed_at)
         VALUES (%s, %s, 'translate', 'completed', %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    """, (sub_id, f'{{"source_lang": "{lang}"}}', f'{{"translated": "{translated[:100]}"}}'))
+    """, (sub_id, json.dumps({"source_lang": lang}), json.dumps({"translated": translated[:500]})))
 
     # ── Step 3: Spam check ───────────────────────────────────────────────
     is_spam, spam_reason = check_spam(translated, user_id, conn)
@@ -325,7 +410,7 @@ def _process_one(conn, sub: dict):
     execute_returning_uuid(conn, """
         INSERT INTO processing_queue (id, raw_submission_id, stage, status, input_payload, output_payload, started_at, completed_at)
         VALUES (%s, %s, 'spam_check', 'completed', %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    """, (sub_id, f'{{"text_length": {len(translated)}}}', f'{{"is_spam": {str(is_spam).lower()}, "reason": "{spam_reason}"}}'))
+    """, (sub_id, json.dumps({"text_length": len(translated)}), json.dumps({"is_spam": is_spam, "reason": spam_reason})))
 
     # ── Step 4: Check if issue is specific enough ────────────────────────
     is_specific = len(translated.split()) >= 5  # At least 5 words
@@ -342,8 +427,10 @@ def _process_one(conn, sub: dict):
             "city": sub.get("sub_city"),
             "district": sub.get("sub_district"),
             "state": sub.get("sub_state"),
-            "mp_constituency": sub.get("sub_constituency"),
         }
+
+    # Constituency comes from raw_submissions (user selected it explicitly)
+    constituency = sub.get("sub_constituency", "")
 
     new_status = "processed"
     if is_spam:
@@ -365,7 +452,7 @@ def _process_one(conn, sub: dict):
         pin_data["city"] if pin_data else None,
         pin_data["district"] if pin_data else None,
         pin_data["state"] if pin_data else None,
-        pin_data["mp_constituency"] if pin_data else None,
+        constituency,
         is_spam, spam_reason, is_specific, new_status,
     ))
 

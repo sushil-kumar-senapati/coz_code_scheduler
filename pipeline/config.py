@@ -10,3 +10,6 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "people's_priority")
 
 SCHEDULER_TIME = os.getenv("SCHEDULER_TIME", "23:30")
+
+# Google AI Studio API Key (Gemini 2.5 Flash — FREE tier)
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
