@@ -63,7 +63,7 @@ def seed_all():
         ("EDUCATION", "student_teacher_ratio", "Students per teacher", 30.0, "ratio", "less_is_better", "RTE Act 2009", "all"),
         ("EDUCATION", "toilet_coverage_pct", "Schools with functional toilets %", 100.0, "percentage", "more_is_better", "Swachh Vidyalaya", "all"),
         # Health norms (IPHS)
-        ("HEALTH", "population_per_phc", "Population per PHC", 30000.0, "population_per_facility", "less_is_better", "IPHS 2022", "plain"),
+        ("HEALTH", "phc_per_population", "Population per PHC", 30000.0, "population_per_facility", "less_is_better", "IPHS 2022", "plain"),
         ("HEALTH", "doctor_per_1000", "Doctors per 1000 population", 1.0, "ratio", "more_is_better", "WHO Standard", "all"),
         ("HEALTH", "distance_to_phc_km", "Distance to nearest PHC in km", 3.0, "km", "less_is_better", "IPHS 2022", "all"),
         # Water norms (JJM)

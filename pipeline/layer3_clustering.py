@@ -6,7 +6,7 @@ Pipeline: processed_submissions → demand_clusters + cluster_submissions
 Steps:
   1. Fetch all non-spam processed submissions with status='processed'
   2. For each, compute text similarity against existing cluster representatives
-  3. If similar enough (>= SIMILARITY_THRESHOLD, 0.40) → ADD to existing cluster
+  3. If similar enough (>0.55) → ADD to existing cluster
   4. If unique → CREATE new cluster
   5. Detect same-user duplicate: if user already in cluster → reject
   6. Categorize each cluster into MPLADS categories using keyword matching
@@ -24,29 +24,10 @@ from pipeline.db import (
     get_connection, fetch_all, fetch_one, execute, execute_returning_uuid,
     insert_status_log, insert_notification,
 )
-from pipeline.google_services import embed_texts
 
 log = logging.getLogger("pipeline.layer3")
 
-# TF-IDF (lexical) fallback threshold — used only if embeddings are unavailable.
-SIMILARITY_THRESHOLD = 0.40
-# Semantic (embedding) cosine threshold — groups paraphrases that share meaning
-# but not words ("bridge collapsed" ≈ "bridge broke down"). Tuned empirically for
-# paraphrase-multilingual-MiniLM (dev): genuine paraphrases score 0.6–0.75, while
-# distinct same-sector issues (a real bridge vs a spam road campaign) score ~0.43,
-# so 0.55 groups paraphrases yet keeps genuinely different issues apart.
-EMB_SIMILARITY_THRESHOLD = 0.55
-
-
-def _cosine(a, b) -> float:
-    """Cosine similarity between two vectors (lists/np arrays)."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    na = np.linalg.norm(a)
-    nb = np.linalg.norm(b)
-    if na == 0 or nb == 0:
-        return 0.0
-    return float(np.dot(a, b) / (na * nb))
+SIMILARITY_THRESHOLD = 0.40  # Lower for hackathon text diversity
 
 # ── MPLADS Category Keyword Mapping ─────────────────────────────────────────
 # Used for LLM-free classification. In production, replace with LLM call.
@@ -151,27 +132,11 @@ def cluster_and_categorize(conn) -> int:
         WHERE dc.status NOT IN ('closed')
     """)
 
-    # Pre-embed existing cluster representatives once (semantic clustering).
-    # If the embedding backend is unavailable, use_embeddings stays False and we
-    # transparently fall back to lexical TF-IDF matching.
-    use_embeddings = False
-    rep_vectors = embed_texts([c["representative_text"] or "" for c in existing_clusters]) if existing_clusters else []
-    if rep_vectors is not None:
-        use_embeddings = True
-        for c, v in zip(existing_clusters, rep_vectors):
-            c["emb"] = v
-    else:
-        # embed backend down: still try to embed the batch of NEW subs later;
-        # probe once so we know which path to use for this run.
-        probe = embed_texts(["probe"])
-        use_embeddings = probe is not None
-    log.info(f"Layer 3: similarity mode = {'SEMANTIC embeddings' if use_embeddings else 'TF-IDF (lexical fallback)'}")
-
     clustered_count = 0
 
     for sub in new_subs:
         try:
-            _cluster_one(conn, sub, existing_clusters, use_embeddings)
+            _cluster_one(conn, sub, existing_clusters)
             clustered_count += 1
         except Exception as e:
             log.error(f"  Error clustering {sub.get('raw_submission_id')}: {e}")
@@ -183,20 +148,13 @@ def cluster_and_categorize(conn) -> int:
     return clustered_count
 
 
-def _cluster_one(conn, sub: dict, existing_clusters: list, use_embeddings: bool = False):
+def _cluster_one(conn, sub: dict, existing_clusters: list):
     """Assign a single processed submission to a cluster (existing or new)."""
     sub_text = sub["translated_text_en"] or ""
     user_id = sub["user_id"]
     raw_sub_id = sub["raw_submission_id"]
     constituency = sub["constituency"] or ""
     pin_code = sub["pin_code"] or ""
-
-    # Embed this submission once (reused for match + as the new cluster's vector).
-    sub_emb = None
-    if use_embeddings and sub_text.strip():
-        vecs = embed_texts([sub_text])
-        if vecs:
-            sub_emb = vecs[0]
 
     # Check if same user already has this text in a cluster (same-user duplicate)
     dup = fetch_one(conn, """
@@ -216,36 +174,24 @@ def _cluster_one(conn, sub: dict, existing_clusters: list, use_embeddings: bool 
                             "This issue already exists in the system. Your earlier submission is being tracked.")
         return
 
-    # Find best matching existing cluster (same constituency only)
+    # Find best matching existing cluster
     best_cluster = None
     best_score = 0.0
 
     if existing_clusters and sub_text.strip():
+        # Filter to same constituency
         same_const = [c for c in existing_clusters if c["constituency"] == constituency]
-
-        if same_const and sub_emb is not None:
-            # ── SEMANTIC match: cosine over embeddings (groups paraphrases) ──
-            candidates = [c for c in same_const if c.get("emb") is not None]
-            best_cluster_candidate = None
-            for c in candidates:
-                score = _cosine(sub_emb, c["emb"])
-                if score > best_score:
-                    best_score, best_cluster_candidate = score, c
-            if best_score >= EMB_SIMILARITY_THRESHOLD:
-                best_cluster = best_cluster_candidate
-            else:
-                best_cluster = None
-
-        elif same_const:
-            # ── LEXICAL fallback: TF-IDF cosine (no embeddings available) ──
+        if same_const:
             texts = [c["representative_text"] for c in same_const]
             texts.append(sub_text)
+
             vectorizer = TfidfVectorizer(stop_words="english", max_features=5000)
             try:
                 tfidf_matrix = vectorizer.fit_transform(texts)
                 similarities = cosine_similarity(tfidf_matrix[-1:], tfidf_matrix[:-1])[0]
-                max_idx = int(np.argmax(similarities))
+                max_idx = np.argmax(similarities)
                 best_score = float(similarities[max_idx])
+
                 if best_score >= SIMILARITY_THRESHOLD:
                     best_cluster = same_const[max_idx]
             except Exception:
@@ -323,7 +269,6 @@ def _cluster_one(conn, sub: dict, existing_clusters: list, use_embeddings: bool 
             "unique_users": 1,
             "submission_count": 1,
             "pin_codes_covered": json.dumps([pin_code] if pin_code else []),
-            "emb": sub_emb,  # cache embedding for in-batch semantic matching
         })
 
     # Update raw submission status

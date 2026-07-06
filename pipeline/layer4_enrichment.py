@@ -94,16 +94,8 @@ def _calculate_infra_gap(actual_data: dict, norms: list[dict], category: str) ->
     gap = 0.0 means infrastructure is perfect (no gap)
     gap = 1.0 means critical gap (far from standard)
     """
-    # No government norm exists for this category (SPORTS, COMMUNITY_INFRA,
-    # RAILWAYS, DISASTER, IRRIGATION). These are "quality-of-life" asks with no
-    # objective, measurable deficit — so the infrastructure gap is LOW, not the
-    # 0.5 "moderate" that previously let a luxury item (e.g. an open-air gym in
-    # an already-served park) inherit a mid-range gap and outrank real deficits.
-    if not norms:
-        return 0.15, {"note": "No measurable infrastructure norm for this category (quality-of-life)"}
-    # Norms exist but we have zero source data → genuinely uncertain, keep moderate.
-    if not actual_data:
-        return 0.5, {"note": "Norms defined but no source data available — moderate default"}
+    if not norms or not actual_data:
+        return 0.5, {"note": "Insufficient data, using default gap"}
 
     gap_scores = []
     details = {}
