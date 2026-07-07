@@ -38,9 +38,9 @@ jobs:
           docker push ${{ env.IMAGE }}:${{ github.sha }}
           docker push ${{ env.IMAGE }}:latest
 
-      - name: Update Cloud Run Job
+      - name: Deploy to Cloud Run
         run: |
-          gcloud run jobs update ${{ env.JOB }} \
+          gcloud run deploy ${{ env.JOB }} \
             --image ${{ env.IMAGE }}:${{ github.sha }} \
             --region ${{ env.REGION }} \
             --project ${{ env.PROJECT_ID }} \
