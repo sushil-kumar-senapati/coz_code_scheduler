@@ -19,6 +19,7 @@ AI Services (Google Cloud REST APIs with API key):
 
 import re
 import os
+import io
 import json
 import base64
 import logging
@@ -33,10 +34,7 @@ from pipeline.config import GOOGLE_API_KEY
 
 log = logging.getLogger("pipeline.layer2")
 
-# Upload directory (same as backend-api)
-UPLOAD_BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "coz_code_backend", "uploads"))
-
-# Gemini API config
+# Gemini API config``
 GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_MAX_RETRIES = 3
 GEMINI_RETRY_DELAY = 4  # seconds between retries (free tier: 15 RPM)
@@ -79,14 +77,37 @@ def _call_gemini(parts: list, max_tokens: int = 8192) -> str | None:
 
 # ── Google Cloud Speech-to-Text V2 ──────────────────────────────────────────
 
+def _fetch_file_bytes(file_url: str) -> bytes | None:
+    """Fetch file bytes from a GCS public URL (https://) or local path (fallback)."""
+    if not file_url:
+        return None
+    if file_url.startswith("http://") or file_url.startswith("https://"):
+        try:
+            req = urllib.request.Request(file_url, headers={"User-Agent": "PeoplesPriorities/1.0"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return resp.read()
+        except Exception as e:
+            log.warning(f"  [FETCH] Failed to download {file_url}: {e}")
+            return None
+    # Local fallback (dev)
+    if os.path.exists(file_url):
+        with open(file_url, "rb") as f:
+            return f.read()
+    log.warning(f"  [FETCH] File not found: {file_url}")
+    return None
+
+
 def real_asr(file_url: str, language: str) -> str:
-    """Speech-to-Text using Google Cloud Speech-to-Text V2 API. Falls back to free API."""
-    file_path = os.path.join(UPLOAD_BASE, *file_url.strip("/").replace("uploads/", "").split("/"))
-    if not os.path.exists(file_path):
-        log.warning(f"  [ASR] Audio file not found: {file_path}")
+    """Speech-to-Text using Gemini 2.5 Flash. Falls back to free speech_recognition API."""
+    if not file_url:
         return ""
 
-    log.info(f"  [ASR] Processing audio: {file_path}")
+    log.info(f"  [ASR] Processing audio: {file_url}")
+
+    audio_bytes = _fetch_file_bytes(file_url)
+    if not audio_bytes:
+        log.warning(f"  [ASR] Could not fetch audio: {file_url}")
+        return ""
 
     lang_map = {
         "en": "en-IN", "english": "en-IN", "hi": "hi-IN", "hindi": "hi-IN",
@@ -101,11 +122,8 @@ def real_asr(file_url: str, language: str) -> str:
     # ── Try 1: Gemini 2.5 Flash for audio (FREE — supports native languages) ──
     if GOOGLE_API_KEY:
         try:
-            with open(file_path, "rb") as f:
-                audio_bytes = f.read()
             audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
-
-            ext = os.path.splitext(file_path)[1].lower()
+            ext = os.path.splitext(file_url.split("?")[0])[1].lower()
             audio_mime = {".webm": "audio/webm", ".wav": "audio/wav",
                           ".mp3": "audio/mp3", ".ogg": "audio/ogg", ".m4a": "audio/mp4"}
             mime = audio_mime.get(ext, "audio/webm")
@@ -126,7 +144,7 @@ def real_asr(file_url: str, language: str) -> str:
     try:
         import speech_recognition as sr
         from pydub import AudioSegment
-        audio = AudioSegment.from_file(file_path)
+        audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
         wav_path = tempfile.mktemp(suffix=".wav")
         audio.export(wav_path, format="wav")
         recognizer = sr.Recognizer()
@@ -144,22 +162,22 @@ def real_asr(file_url: str, language: str) -> str:
 # ── Gemini OCR (+ Vision API + Tesseract fallback) ──────────────────────────
 
 def real_ocr(file_url: str) -> str:
-    """Image-to-Text using Gemini (best for handwritten native languages), 
+    """Image-to-Text using Gemini (best for handwritten native languages),
     falls back to Vision API, then Tesseract."""
-    file_path = os.path.join(UPLOAD_BASE, *file_url.strip("/").replace("uploads/", "").split("/"))
-    if not os.path.exists(file_path):
-        log.warning(f"  [OCR] Image file not found: {file_path}")
+    if not file_url:
         return ""
 
-    log.info(f"  [OCR] Processing image: {file_path}")
+    log.info(f"  [OCR] Processing image: {file_url}")
 
-    # Read image as base64
-    with open(file_path, "rb") as f:
-        image_bytes = f.read()
+    image_bytes = _fetch_file_bytes(file_url)
+    if not image_bytes:
+        log.warning(f"  [OCR] Could not fetch image: {file_url}")
+        return ""
+
     image_b64 = base64.b64encode(image_bytes).decode("utf-8")
 
-    # Detect mime type
-    ext = os.path.splitext(file_path)[1].lower()
+    # Detect mime type from URL extension
+    ext = os.path.splitext(file_url.split("?")[0])[1].lower()
     mime_map = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif"}
     mime_type = mime_map.get(ext, "image/jpeg")
 
@@ -182,7 +200,7 @@ def real_ocr(file_url: str) -> str:
     # ── Try 2: Tesseract OCR (local fallback) ────────────────────────────
     try:
         from PIL import Image
-        img = Image.open(file_path)
+        img = Image.open(io.BytesIO(image_bytes))
         try:
             import pytesseract
             pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
