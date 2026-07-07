@@ -14,5 +14,5 @@ RUN pip install --no-cache-dir /wheels/* && rm -rf /wheels
 
 COPY . .
 
-# Cloud Run Job: triggered by Cloud Scheduler, runs pipeline once and exits
-CMD ["python", "run_scheduler.py", "--now"]
+# Cloud Run Service: starts HTTP server + nightly schedule loop
+CMD ["python", "server.py"]
