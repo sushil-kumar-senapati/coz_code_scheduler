@@ -30,7 +30,7 @@ from pipeline.db import (
     get_connection, fetch_all, fetch_one, execute, execute_returning_uuid,
     insert_status_log,
 )
-from pipeline.config import GOOGLE_API_KEY
+from pipeline.config import GOOGLE_API_KEY, GCS_BUCKET
 
 log = logging.getLogger("pipeline.layer2")
 
@@ -78,9 +78,28 @@ def _call_gemini(parts: list, max_tokens: int = 8192) -> str | None:
 # ── Google Cloud Speech-to-Text V2 ──────────────────────────────────────────
 
 def _fetch_file_bytes(file_url: str) -> bytes | None:
-    """Fetch file bytes from a GCS public URL (https://) or local path (fallback)."""
+    """Fetch file bytes from a GCS public URL, legacy /uploads/ path, or local path.
+
+    Handles three formats stored in submission_media.file_url:
+      1. Full GCS URL:  https://storage.googleapis.com/pp26-501410-uploads/submissions/...
+      2. Legacy local:  /uploads/{sub_id}/{file}  → rewritten to GCS URL
+      3. Blob path:     submissions/{sub_id}/{file} → rewritten to GCS URL
+    """
     if not file_url:
         return None
+
+    # Rewrite legacy /uploads/... paths to full GCS URL
+    if file_url.startswith("/uploads/"):
+        blob = "submissions/" + file_url.removeprefix("/uploads/")
+        file_url = f"https://storage.googleapis.com/{GCS_BUCKET}/{blob}"
+        log.info(f"  [FETCH] Rewrote legacy path → {file_url}")
+
+    # Rewrite bare blob paths (no scheme)
+    elif not file_url.startswith("http://") and not file_url.startswith("https://"):
+        file_url = f"https://storage.googleapis.com/{GCS_BUCKET}/{file_url.lstrip('/')}"
+        log.info(f"  [FETCH] Rewrote blob path → {file_url}")
+
+    # Fetch from URL
     if file_url.startswith("http://") or file_url.startswith("https://"):
         try:
             req = urllib.request.Request(file_url, headers={"User-Agent": "PeoplesPriorities/1.0"})
@@ -89,6 +108,7 @@ def _fetch_file_bytes(file_url: str) -> bytes | None:
         except Exception as e:
             log.warning(f"  [FETCH] Failed to download {file_url}: {e}")
             return None
+
     # Local fallback (dev)
     if os.path.exists(file_url):
         with open(file_url, "rb") as f:
